@@ -80,6 +80,39 @@ def _get_input_duration(input_path: str) -> Optional[float]:
         logger.warning(f"No se pudo calcular la duración de '{input_path}': {e}")
     return None
 
+
+_BOOL_QUERY_KEYS = {
+    "use_lufs_normalize", "comp_stereo_link", "mb_bypass", "mb_stereo_bypass",
+    "use_stereo_enhancer", "glue_bypass",
+}
+
+def coerce_ws_chain_params(params: dict) -> dict:
+    """Convierte params recibidos por WebSocket desde URLSearchParams/JSON.
+
+    El frontend arma el stream preview a partir de URLSearchParams; eso convierte
+    floats/bools a strings. FastAPI hace este casteo automáticamente en endpoints
+    REST, pero el WebSocket no, y el DSP espera números/bools reales.
+    """
+    out = {}
+    for key, value in params.items():
+        if key in _BOOL_QUERY_KEYS:
+            if isinstance(value, str):
+                out[key] = value.strip().lower() in {"1", "true", "yes", "on", "sí", "si"}
+            else:
+                out[key] = bool(value)
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if value == "":
+                continue
+            try:
+                out[key] = float(value)
+                continue
+            except ValueError:
+                pass
+        out[key] = value
+    return out
+
 def cleanup_old() -> None:
     now = time.time()
     try:
@@ -360,6 +393,8 @@ async def ws_master_stream(websocket: WebSocket):
             chain_params["use_lufs_normalize"] = True
             chain_params["target_lufs"] = get_platform_target(platform)["lufs"]
 
+        chain_params = coerce_ws_chain_params(chain_params)
+
         audio_bytes = await websocket.receive_bytes()
 
         # BUGFIX: a diferencia de todos los endpoints REST (/master, /preview,
@@ -545,6 +580,12 @@ async def preview(
     haas_delay_ms: float      = Query(0.0,   ge=0.0,   le=30.0),
     reverb_size: float        = Query(0.3,   ge=0.05,  le=2.0),
     reverb_wet: float         = Query(0.0,   ge=0.0,   le=1.0),
+    glue_bypass: bool         = Query(True),
+    glue_threshold_db: float  = Query(-4.0,  ge=-24.0, le=0.0),
+    glue_ratio: float         = Query(2.0,   ge=1.0,   le=10.0),
+    glue_attack_ms: float     = Query(30.0,  ge=0.1,   le=200.0),
+    glue_release_ms: float    = Query(120.0, ge=10.0,  le=1000.0),
+    glue_makeup_db: float     = Query(0.0,   ge=-12.0, le=12.0),
     limiter_ceiling: float    = Query(0.95,  ge=0.5,   le=1.0),
     limiter_release_ms: float = Query(50.0,  ge=1.0,   le=500.0),
     output_format: str        = Query("mp3", pattern="^(wav|flac|mp3)$"),
@@ -594,6 +635,13 @@ async def preview(
             mb_bypass=mb_bypass,
             hp_cutoff=hp_cutoff,
             high_shelf_gain_db=high_shelf_gain_db,
+            high_shelf_freq_hz=high_shelf_freq_hz,
+            mb_stereo_bypass=mb_stereo_bypass,
+            mb_stereo_low_width=mb_stereo_low_width,
+            mb_stereo_mid_width=mb_stereo_mid_width,
+            mb_stereo_high_width=mb_stereo_high_width,
+            mb_stereo_low_crossover=mb_stereo_low_crossover,
+            mb_stereo_high_crossover=mb_stereo_high_crossover,
             eq1_freq=eq1_freq, eq1_gain=eq1_gain, eq1_q=eq1_q,
             eq2_freq=eq2_freq, eq2_gain=eq2_gain, eq2_q=eq2_q,
             eq3_freq=eq3_freq, eq3_gain=eq3_gain, eq3_q=eq3_q,
@@ -611,6 +659,12 @@ async def preview(
             haas_delay_ms=haas_delay_ms,
             reverb_size=reverb_size,
             reverb_wet=reverb_wet,
+            glue_bypass=glue_bypass,
+            glue_threshold_db=glue_threshold_db,
+            glue_ratio=glue_ratio,
+            glue_attack_ms=glue_attack_ms,
+            glue_release_ms=glue_release_ms,
+            glue_makeup_db=glue_makeup_db,
             limiter_ceiling=limiter_ceiling,
             limiter_release_ms=limiter_release_ms,
             output_format=output_format,
@@ -687,6 +741,12 @@ async def master_async(
     haas_delay_ms: float      = Query(0.0,   ge=0.0,   le=30.0),
     reverb_size: float        = Query(0.3,   ge=0.05,  le=2.0),
     reverb_wet: float         = Query(0.0,   ge=0.0,   le=1.0),
+    glue_bypass: bool         = Query(True),
+    glue_threshold_db: float  = Query(-4.0,  ge=-24.0, le=0.0),
+    glue_ratio: float         = Query(2.0,   ge=1.0,   le=10.0),
+    glue_attack_ms: float     = Query(30.0,  ge=0.1,   le=200.0),
+    glue_release_ms: float    = Query(120.0, ge=10.0,  le=1000.0),
+    glue_makeup_db: float     = Query(0.0,   ge=-12.0, le=12.0),
     limiter_ceiling: float    = Query(0.95,  ge=0.5,   le=1.0),
     limiter_release_ms: float = Query(50.0,  ge=1.0,   le=500.0),
     output_format: str        = Query("wav",  pattern="^(wav|flac|mp3)$"),
@@ -754,6 +814,12 @@ async def master_async(
         haas_delay_ms=haas_delay_ms,
         reverb_size=reverb_size,
         reverb_wet=reverb_wet,
+        glue_bypass=glue_bypass,
+        glue_threshold_db=glue_threshold_db,
+        glue_ratio=glue_ratio,
+        glue_attack_ms=glue_attack_ms,
+        glue_release_ms=glue_release_ms,
+        glue_makeup_db=glue_makeup_db,
         limiter_ceiling=limiter_ceiling,
         limiter_release_ms=limiter_release_ms,
         output_format=output_format,
@@ -829,6 +895,12 @@ async def master_sync(
     haas_delay_ms: float      = Query(0.0,   ge=0.0,   le=30.0),
     reverb_size: float        = Query(0.3,   ge=0.05,  le=2.0),
     reverb_wet: float         = Query(0.0,   ge=0.0,   le=1.0),
+    glue_bypass: bool         = Query(True),
+    glue_threshold_db: float  = Query(-4.0,  ge=-24.0, le=0.0),
+    glue_ratio: float         = Query(2.0,   ge=1.0,   le=10.0),
+    glue_attack_ms: float     = Query(30.0,  ge=0.1,   le=200.0),
+    glue_release_ms: float    = Query(120.0, ge=10.0,  le=1000.0),
+    glue_makeup_db: float     = Query(0.0,   ge=-12.0, le=12.0),
     limiter_ceiling: float    = Query(0.95,  ge=0.5,   le=1.0),
     limiter_release_ms: float = Query(50.0,  ge=1.0,   le=500.0),
     output_format: str        = Query("wav",  pattern="^(wav|flac|mp3)$"),
@@ -875,6 +947,13 @@ async def master_sync(
             mb_bypass=mb_bypass,
             hp_cutoff=hp_cutoff,
             high_shelf_gain_db=high_shelf_gain_db,
+            high_shelf_freq_hz=high_shelf_freq_hz,
+            mb_stereo_bypass=mb_stereo_bypass,
+            mb_stereo_low_width=mb_stereo_low_width,
+            mb_stereo_mid_width=mb_stereo_mid_width,
+            mb_stereo_high_width=mb_stereo_high_width,
+            mb_stereo_low_crossover=mb_stereo_low_crossover,
+            mb_stereo_high_crossover=mb_stereo_high_crossover,
             eq1_freq=eq1_freq, eq1_gain=eq1_gain, eq1_q=eq1_q,
             eq2_freq=eq2_freq, eq2_gain=eq2_gain, eq2_q=eq2_q,
             eq3_freq=eq3_freq, eq3_gain=eq3_gain, eq3_q=eq3_q,
@@ -892,6 +971,12 @@ async def master_sync(
             haas_delay_ms=haas_delay_ms,
             reverb_size=reverb_size,
             reverb_wet=reverb_wet,
+            glue_bypass=glue_bypass,
+            glue_threshold_db=glue_threshold_db,
+            glue_ratio=glue_ratio,
+            glue_attack_ms=glue_attack_ms,
+            glue_release_ms=glue_release_ms,
+            glue_makeup_db=glue_makeup_db,
             limiter_ceiling=limiter_ceiling,
             limiter_release_ms=limiter_release_ms,
             output_format=output_format,

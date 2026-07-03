@@ -238,13 +238,13 @@
   .mb-gr-bar-wrap{width:100%;height:8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;overflow:hidden;position:relative}
   .mb-gr-bar{height:100%;background:linear-gradient(to right,var(--accent),var(--yellow));border-radius:4px;width:0%;transition:width .12s ease}
   .mb-gr-readout{font-family:var(--mono);font-size:.65rem;color:var(--text)}
-  .mb-vu-section{margin-top:.9rem;display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-  .mb-vu-item{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.5rem .75rem}
-  .mb-vu-label{font-size:.6rem;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem}
-  .mb-vu-row{display:flex;justify-content:space-between;align-items:center;margin-top:.15rem}
-  .mb-vu-key{font-size:.62rem;color:var(--muted);font-family:var(--mono)}
-  .mb-vu-val{font-size:.7rem;font-family:var(--mono);color:var(--text);font-weight:600}
-
+  .mb-vu-section{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:1rem}
+  .mb-vu-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem .75rem}
+  .mb-vu-label{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.45rem}
+  .mb-vu-row{display:flex;justify-content:space-between;gap:.5rem;font-size:.72rem;padding:.2rem 0;border-bottom:1px solid rgba(42,42,58,.7)}
+  .mb-vu-row:last-child{border-bottom:none}
+  .mb-vu-key{color:var(--muted)}
+  .mb-vu-val{font-family:var(--mono);color:var(--text);font-weight:700}
   .mb-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.25rem;margin-top:1rem}
   .mb-wrap h3{font-size:.75rem;font-family:var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
   .mb-tabs{display:flex;gap:.5rem;margin-bottom:1rem}
@@ -421,6 +421,23 @@
       <div class="param"><label>Attack</label><span class="val" id="v-cattack">10.0 ms</span><input type="range" id="s-cattack" min="0.1" max="200" step="0.1" value="10"/></div>
       <div class="param"><label>Release</label><span class="val" id="v-crelease">100 ms</span><input type="range" id="s-crelease" min="10" max="1000" step="5" value="100"/></div>
       <div class="param"><label>Makeup</label><span class="val" id="v-cmakeup">+0.0 dB</span><input type="range" id="s-cmakeup" min="-12" max="24" step="0.5" value="0"/></div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;margin-bottom:.9rem;cursor:pointer;">
+        <input type="checkbox" id="s-comp-link" checked style="width:auto;cursor:pointer;"/>Stereo link L/R
+      </label>
+    </div>
+
+
+    <!-- Glue Compressor -->
+    <div>
+      <div class="section-label">Glue Compressor (bus / mix glue)</div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;margin-bottom:.9rem;cursor:pointer;">
+        <input type="checkbox" id="s-glue-bypass" checked style="width:auto;cursor:pointer;"/>Bypass glue compressor
+      </label>
+      <div class="param"><label>Threshold</label><span class="val" id="v-glue-thresh">Threshold -4.0 dB</span><input type="range" id="s-glue-thresh" min="-24" max="0" step="0.5" value="-4"/></div>
+      <div class="param"><label>Ratio</label><span class="val" id="v-glue-ratio">Ratio 2.0:1</span><input type="range" id="s-glue-ratio" min="1" max="10" step="0.5" value="2"/></div>
+      <div class="param"><label>Attack</label><span class="val" id="v-glue-attack">Attack 30.0 ms</span><input type="range" id="s-glue-attack" min="0.1" max="200" step="0.1" value="30"/></div>
+      <div class="param"><label>Release</label><span class="val" id="v-glue-release">Release 120 ms</span><input type="range" id="s-glue-release" min="10" max="1000" step="5" value="120"/></div>
+      <div class="param"><label>Makeup</label><span class="val" id="v-glue-makeup">Makeup +0.0 dB</span><input type="range" id="s-glue-makeup" min="-12" max="12" step="0.5" value="0"/></div>
     </div>
 
     <!-- Compresor multibanda -->
@@ -564,6 +581,13 @@
     <!-- Salida -->
     <div>
       <div class="section-label">Salida</div>
+      <select id="s-oversample" style="margin-bottom:.5rem">
+        <option value="off">Oversampling: off</option>
+        <option value="draft">Oversampling: draft</option>
+        <option value="fast">Oversampling: fast</option>
+        <option value="quality" selected>Oversampling: quality</option>
+        <option value="ultra">Oversampling: ultra</option>
+      </select>
       <select id="s-format">
         <option value="wav">WAV</option>
         <option value="flac">FLAC</option>
@@ -717,7 +741,7 @@ function prefillTrackNameFromFile() {
   input.value = base;
 }
 let abSnapshotA = null, abSnapshotB = null;
-let previewDebounceTimer = null, previewAbortController = null, previewAudioUrl = null;
+let previewDebounceTimer = null, previewAbortController = null, previewAudioUrl = null, previewWS = null;
 let originalFFTCache = null;
 let previewBufs = { original: null, processed: null };
 let metersAudioCtx = null, metersSourceNode = null, metersAnalyserL = null, metersAnalyserR = null, metersRafId = null;
@@ -739,6 +763,11 @@ const sliders = [
   ['s-cattack','v-cattack',v=>v.toFixed(1)+' ms'],
   ['s-crelease','v-crelease',v=>Math.round(v)+' ms'],
   ['s-cmakeup','v-cmakeup',v=>(v>=0?'+':'')+v.toFixed(1)+' dB'],
+  ['s-glue-thresh','v-glue-thresh',v=>'Threshold '+v.toFixed(1)+' dB'],
+  ['s-glue-ratio','v-glue-ratio',v=>'Ratio '+v.toFixed(1)+':1'],
+  ['s-glue-attack','v-glue-attack',v=>'Attack '+v.toFixed(1)+' ms'],
+  ['s-glue-release','v-glue-release',v=>'Release '+Math.round(v)+' ms'],
+  ['s-glue-makeup','v-glue-makeup',v=>'Makeup '+(v>=0?'+':'')+v.toFixed(1)+' dB'],
   ['s-hp','v-hp',v=>v+' Hz'],
   ['s-eq1freq','v-eq1freq-disp',v=>v>=1000?(v/1000).toFixed(1)+' kHz':Math.round(v)+' Hz'],
   ['s-eq1gain','v-eq1gain',v=>(v>=0?'+':'')+v.toFixed(1)+' dB'],
@@ -818,7 +847,9 @@ let activePreset = null;
 const sliderIdToParam = {
   's-ingain':'input_gain_db',
   's-peak':'target_peak','s-thresh':'comp_threshold','s-ratio':'comp_ratio','s-cattack':'comp_attack_ms',
-  's-crelease':'comp_release_ms','s-cmakeup':'comp_makeup_db','s-hp':'hp_cutoff','s-air':'high_shelf_gain_db','s-shelf-freq':'high_shelf_freq_hz',
+  's-crelease':'comp_release_ms','s-cmakeup':'comp_makeup_db',
+  's-glue-thresh':'glue_threshold_db','s-glue-ratio':'glue_ratio','s-glue-attack':'glue_attack_ms','s-glue-release':'glue_release_ms','s-glue-makeup':'glue_makeup_db',
+  's-hp':'hp_cutoff','s-air':'high_shelf_gain_db','s-shelf-freq':'high_shelf_freq_hz',
   's-eq1freq':'eq1_freq','s-eq1gain':'eq1_gain','s-eq1q':'eq1_q',
   's-eq2freq':'eq2_freq','s-eq2gain':'eq2_gain','s-eq2q':'eq2_q',
   's-eq3freq':'eq3_freq','s-eq3gain':'eq3_gain','s-eq3q':'eq3_q',
@@ -849,7 +880,10 @@ function applyPresetToUI(presetData) {
   });
   if (presetData.use_lufs_normalize != null) document.getElementById('s-uselufs').checked = !!presetData.use_lufs_normalize;
   if (presetData.use_stereo_enhancer != null) document.getElementById('s-enhancer').checked = !!presetData.use_stereo_enhancer;
+  if (presetData.comp_stereo_link != null) document.getElementById('s-comp-link').checked = !!presetData.comp_stereo_link;
+  if (presetData.glue_bypass != null) document.getElementById('s-glue-bypass').checked = !!presetData.glue_bypass;
   if (presetData.saturation_mode) document.getElementById('s-satmode').value = presetData.saturation_mode;
+  if (presetData.oversample_mode) document.getElementById('s-oversample').value = presetData.oversample_mode;
   if (presetData.mb_bypass != null) document.getElementById('mb-bypass').checked = !!presetData.mb_bypass;
   drawEQCurve();
   schedulePreview();
@@ -1167,6 +1201,14 @@ function collectMasterParamsObj() {
     comp_attack_ms: document.getElementById('s-cattack').value,
     comp_release_ms: document.getElementById('s-crelease').value,
     comp_makeup_db: document.getElementById('s-cmakeup').value,
+    comp_stereo_link: document.getElementById('s-comp-link').checked,
+    oversample_mode: document.getElementById('s-oversample').value,
+    glue_bypass: document.getElementById('s-glue-bypass').checked,
+    glue_threshold_db: document.getElementById('s-glue-thresh').value,
+    glue_ratio: document.getElementById('s-glue-ratio').value,
+    glue_attack_ms: document.getElementById('s-glue-attack').value,
+    glue_release_ms: document.getElementById('s-glue-release').value,
+    glue_makeup_db: document.getElementById('s-glue-makeup').value,
     hp_cutoff: document.getElementById('s-hp').value,
     high_shelf_gain_db: document.getElementById('s-air').value,
     high_shelf_freq_hz: document.getElementById('s-shelf-freq').value,
@@ -1235,22 +1277,24 @@ function buildParams() {
 // ── Vista previa de parámetros corregidos antes de masterizar ───────────────
 const PARAM_PREVIEW_GROUPS = [
   { title: 'Entrada / Loudness', keys: ['input_gain_db','target_peak','use_lufs_normalize','target_lufs','platform_target'] },
-  { title: 'Compresor', keys: ['comp_threshold','comp_ratio','comp_attack_ms','comp_release_ms','comp_makeup_db'] },
+  { title: 'Compresor', keys: ['comp_threshold','comp_ratio','comp_attack_ms','comp_release_ms','comp_makeup_db','comp_stereo_link','oversample_mode'] },
   { title: 'EQ', keys: ['hp_cutoff','high_shelf_gain_db','high_shelf_freq_hz','eq1_freq','eq1_gain','eq1_q','eq2_freq','eq2_gain','eq2_q','eq3_freq','eq3_gain','eq3_q','eq4_freq','eq4_gain','eq4_q'] },
   { title: 'Transient / Saturación', keys: ['transient_attack','transient_sustain','saturation_drive','saturation_mode','saturation_mix'] },
   { title: 'Estéreo', keys: ['mid_gain_db','side_gain_db','stereo_width_amount','use_stereo_enhancer','haas_delay_ms','enhancer_bass_mono_freq'] },
+  { title: 'Glue Compressor', keys: ['glue_bypass','glue_threshold_db','glue_ratio','glue_attack_ms','glue_release_ms','glue_makeup_db'] },
   { title: 'Reverb / Limiter / Salida', keys: ['reverb_size','reverb_wet','limiter_ceiling','limiter_release_ms','output_format'] },
   { title: 'Multibanda — Compresión', keys: ['mb_bypass','mb_low_crossover','mb_high_crossover','mb_low_threshold','mb_low_ratio','mb_low_attack_ms','mb_low_release_ms','mb_low_makeup_db','mb_mid_threshold','mb_mid_ratio','mb_mid_attack_ms','mb_mid_release_ms','mb_mid_makeup_db','mb_high_threshold','mb_high_ratio','mb_high_attack_ms','mb_high_release_ms','mb_high_makeup_db'] },
   { title: 'Multibanda — Ancho estéreo', keys: ['mb_stereo_bypass','mb_stereo_low_width','mb_stereo_mid_width','mb_stereo_high_width','mb_stereo_low_crossover','mb_stereo_high_crossover'] },
 ];
 const PARAM_LABELS = {
   input_gain_db:'Ganancia entrada (dB)', target_peak:'Peak objetivo', use_lufs_normalize:'Normalizar LUFS', target_lufs:'LUFS objetivo', platform_target:'Plataforma',
-  comp_threshold:'Umbral', comp_ratio:'Ratio', comp_attack_ms:'Attack (ms)', comp_release_ms:'Release (ms)', comp_makeup_db:'Makeup (dB)',
+  comp_threshold:'Threshold', comp_ratio:'Ratio', comp_attack_ms:'Attack', comp_release_ms:'Release', comp_makeup_db:'Makeup', comp_stereo_link:'Stereo link L/R', oversample_mode:'Oversampling',
   hp_cutoff:'High-pass (Hz)', high_shelf_gain_db:'Shelf ganancia (dB)', high_shelf_freq_hz:'Shelf freq (Hz)',
   eq1_freq:'EQ1 freq', eq1_gain:'EQ1 ganancia', eq1_q:'EQ1 Q', eq2_freq:'EQ2 freq', eq2_gain:'EQ2 ganancia', eq2_q:'EQ2 Q',
   eq3_freq:'EQ3 freq', eq3_gain:'EQ3 ganancia', eq3_q:'EQ3 Q', eq4_freq:'EQ4 freq', eq4_gain:'EQ4 ganancia', eq4_q:'EQ4 Q',
   transient_attack:'Transient attack', transient_sustain:'Transient sustain', saturation_drive:'Saturación drive', saturation_mode:'Saturación modo', saturation_mix:'Saturación mix',
   mid_gain_db:'Mid gain (dB)', side_gain_db:'Side gain (dB)', stereo_width_amount:'Ancho estéreo', use_stereo_enhancer:'Stereo enhancer', haas_delay_ms:'Haas delay (ms)', enhancer_bass_mono_freq:'Bass mono freq',
+  glue_bypass:'Bypass glue', glue_threshold_db:'Threshold', glue_ratio:'Ratio', glue_attack_ms:'Attack', glue_release_ms:'Release', glue_makeup_db:'Makeup',
   reverb_size:'Reverb tamaño', reverb_wet:'Reverb wet', limiter_ceiling:'Limiter ceiling', limiter_release_ms:'Limiter release (ms)', output_format:'Formato salida',
   mb_bypass:'Bypass multibanda', mb_low_crossover:'Cruce low (Hz)', mb_high_crossover:'Cruce high (Hz)',
   mb_low_threshold:'Low umbral', mb_low_ratio:'Low ratio', mb_low_attack_ms:'Low attack', mb_low_release_ms:'Low release', mb_low_makeup_db:'Low makeup',
@@ -1259,7 +1303,13 @@ const PARAM_LABELS = {
   mb_stereo_bypass:'Bypass ancho MB', mb_stereo_low_width:'Ancho low', mb_stereo_mid_width:'Ancho mid', mb_stereo_high_width:'Ancho high',
   mb_stereo_low_crossover:'Cruce low (Hz)', mb_stereo_high_crossover:'Cruce high (Hz)',
 };
-function formatParamValue(v) {
+function formatParamValue(v, key) {
+  const n = parseFloat(v);
+  if (key && key.includes('ratio') && !Number.isNaN(n)) return `Ratio ${n.toFixed(1)}:1`;
+  if (key && (key.includes('threshold_db') || key === 'comp_threshold') && !Number.isNaN(n)) return key === 'comp_threshold' ? `Threshold ${(20*Math.log10(Math.max(n,1e-9))).toFixed(1)} dB` : `Threshold ${n.toFixed(1)} dB`;
+  if (key && key.includes('attack_ms') && !Number.isNaN(n)) return `Attack ${n.toFixed(1)} ms`;
+  if (key && key.includes('release_ms') && !Number.isNaN(n)) return `Release ${Math.round(n)} ms`;
+  if (key && key.includes('makeup_db') && !Number.isNaN(n)) return `Makeup ${n>=0?'+':''}${n.toFixed(1)} dB`;
   if (v === true) return 'Sí';
   if (v === false) return 'No';
   if (v === '' || v == null) return '—';
@@ -1274,7 +1324,7 @@ function renderParamsPreview(paramsObj, { onConfirm, onCancel, confirmLabel = '�
     if (!items.length) return;
     html += `<div class="pp-group"><div class="pp-group-title">${group.title}</div><div class="pp-grid">`;
     items.forEach(k => {
-      html += `<div class="pp-item"><span>${PARAM_LABELS[k] || k}</span><span>${formatParamValue(paramsObj[k])}</span></div>`;
+      html += `<div class="pp-item"><span>${PARAM_LABELS[k] || k}</span><span>${formatParamValue(paramsObj[k], k)}</span></div>`;
     });
     html += `</div></div>`;
   });
@@ -1903,50 +1953,99 @@ function schedulePreview() {
   previewDebounceTimer = setTimeout(runLivePreview, 600);
 }
 
+function wsUrlFor(path) {
+  const apiUrl = new URL(API());
+  return `${apiUrl.protocol === 'https:' ? 'wss' : 'ws'}://${apiUrl.host}${path}`;
+}
+
+function wavBlobFromPcm16(chunks, sampleRate, channels) {
+  const dataSize = chunks.reduce((n, b) => n + b.byteLength, 0);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const write = (off, str) => { for (let i=0; i<str.length; i++) view.setUint8(off+i, str.charCodeAt(i)); };
+  write(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); write(8, 'WAVE');
+  write(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true); view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, dataSize, true);
+  return new Blob([header, ...chunks], {type:'audio/wav'});
+}
+
 async function runLivePreview() {
   if (!selectedFile) return;
   if (previewAbortController) previewAbortController.abort();
+  if (previewWS) { try { previewWS.close(); } catch(e){} previewWS = null; }
   previewAbortController = new AbortController();
   const wrap = document.getElementById('previewWrap');
   wrap.style.display = 'block';
   setPreviewUpdating(true);
-  setPreviewStatus('Procesando preview (15s)…');
+  setPreviewStatus('Streaming preview + meters en tiempo real…');
 
-  const fmt = document.getElementById('s-format').value;
   try {
-    const params = buildParams();
-    params.set('preview_seconds', '15');
-    params.set('output_format', fmt);
-    const fd = new FormData(); fd.append('file', selectedFile);
-    const res = await fetch(`${API()}/preview?${params}`, {method:'POST', body:fd, signal:previewAbortController.signal});
-    if (!res.ok) throw new Error(await res.text());
-    const blob = await res.blob();
+    const ws = new WebSocket(wsUrlFor('/ws/master-stream'));
+    previewWS = ws;
+    const pcmChunks = [];
+    let sampleRate = 44100, channels = 2, lastMetrics = null;
+    previewAbortController.signal.addEventListener('abort', () => { try { ws.close(); } catch(e){} });
+
+    await new Promise((resolve, reject) => {
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = async () => {
+        const cfg = Object.fromEntries(buildParams().entries());
+        cfg.chunk_seconds = 0.35;
+        cfg.output_format = 'wav';
+        ws.send(JSON.stringify(cfg));
+        ws.send(await selectedFile.arrayBuffer());
+      };
+      ws.onmessage = ev => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          if (msg.event === 'chunk') {
+            lastMetrics = msg.metrics || null;
+            sampleRate = msg.sample_rate || sampleRate;
+            channels = msg.channels || channels;
+            updateMainMetersFromMetrics(lastMetrics);
+            const pct = lastMetrics?.progress_pct != null ? ` ${lastMetrics.progress_pct.toFixed(1)}%` : '';
+            setPreviewStatus(`Meters en vivo${pct}…`);
+          } else if (msg.event === 'done') resolve();
+          else if (msg.event === 'error') reject(new Error(msg.message || 'Error de streaming'));
+        } else {
+          pcmChunks.push(ev.data);
+        }
+      };
+      ws.onerror = () => reject(new Error('No se pudo abrir /ws/master-stream'));
+      ws.onclose = () => { if (!lastMetrics) reject(new Error('Streaming cerrado antes de recibir audio')); };
+    });
+
+    const blob = wavBlobFromPcm16(pcmChunks, sampleRate, channels);
     const ab = await blob.arrayBuffer();
     const audCtx = new (window.AudioContext||window.webkitAudioContext)();
     let decodedBuf;
     try { decodedBuf = await audCtx.decodeAudioData(ab.slice(0)); } finally { audCtx.close(); }
     const mono = decodedBuf.numberOfChannels>1 ? (()=>{const c0=decodedBuf.getChannelData(0), c1=decodedBuf.getChannelData(1), m=new Float32Array(c0.length); for(let i=0;i<c0.length;i++) m[i]=(c0[i]+c1[i])/2; return m;})() : decodedBuf.getChannelData(0);
     const previewFFT = computeFFTFromBuffer(mono, decodedBuf.sampleRate, 96);
-    const canvas = document.getElementById('previewCanvas');
     const series = [];
     if (originalFFTCache) series.push({label:'Original',data:originalFFTCache,color:'var(--muted)'});
     series.push({label:'Con tus ajustes',data:previewFFT,color:'var(--accent)'});
-    drawFFTOnCanvas(canvas, series);
+    drawFFTOnCanvas(document.getElementById('previewCanvas'), series);
 
     if (previewAudioUrl) URL.revokeObjectURL(previewAudioUrl);
     previewAudioUrl = URL.createObjectURL(blob);
     document.getElementById('previewAudioWrap').innerHTML = `<audio controls src="${previewAudioUrl}"></audio>`;
     setPreviewUpdating(false);
-    setPreviewStatus('Preview listo ✓ (15s)');
+    setPreviewStatus('Preview listo ✓ · meters actualizados en tiempo real');
   } catch(e) {
     if (e.name==='AbortError') return;
     setPreviewUpdating(false);
     setPreviewStatus('Error: '+e.message);
+  } finally {
+    previewWS = null;
   }
 }
 
 const previewTriggerIds = [
-  's-ingain','s-peak','s-uselufs','s-lufstarget','s-thresh','s-ratio','s-cattack','s-crelease','s-cmakeup',
+  's-ingain','s-peak','s-uselufs','s-lufstarget','s-thresh','s-ratio','s-cattack','s-crelease','s-cmakeup','s-comp-link','s-oversample',
+  's-glue-bypass','s-glue-thresh','s-glue-ratio','s-glue-attack','s-glue-release','s-glue-makeup',
   's-hp','s-air','s-shelf-freq','s-mb-sw-lowx','s-mb-sw-highx','s-mb-sw-low','s-mb-sw-mid','s-mb-sw-high',
   's-eq1freq','s-eq1gain','s-eq1q','s-eq2freq','s-eq2gain','s-eq2q','s-eq3freq','s-eq3gain','s-eq3q','s-eq4freq','s-eq4gain','s-eq4q',
   's-tatt','s-tsus','s-satdrive','s-satmode','s-satmix',
@@ -2063,6 +2162,25 @@ function updateMeterFill(fillId, readoutId, db, fmt) {
   const pct = Math.max(0, Math.min(100, ((db+60)/60)*100));
   document.getElementById(fillId).style.height = pct + '%';
   document.getElementById(readoutId).textContent = db <= -99 ? '-∞' : fmt(db);
+}
+
+function updateMainMetersFromMetrics(metrics) {
+  if (!metrics) return;
+  document.getElementById('metersWrap').style.display = 'block';
+  if (metrics.peak_db != null) updateMeterFill('meterPeakFill','meterPeakReadout', metrics.peak_db, v=>v.toFixed(1)+' dB');
+  if (metrics.rms_db != null) updateMeterFill('meterRmsFill','meterRmsReadout', metrics.rms_db, v=>v.toFixed(1)+' dB');
+  if (metrics.lufs_momentary != null) updateMeterFill('meterLufsFill','meterLufsReadout', metrics.lufs_momentary, v=>v.toFixed(1)+' LUFS');
+  if (metrics.stereo_correlation != null) updateStereoMeter(metrics.stereo_correlation);
+  renderChainMeters({
+    mb: metrics.mb_meters || {},
+    pre_limiter: metrics.pre_limiter || {},
+    post_limiter: metrics.post_limiter || {
+      rms_db: metrics.rms_db,
+      peak_db: metrics.peak_db,
+      lufs: metrics.lufs_momentary,
+      stereo_correlation: metrics.stereo_correlation,
+    },
+  });
 }
 
 function updateStereoMeter(corr) {
