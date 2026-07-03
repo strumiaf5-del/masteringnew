@@ -1436,6 +1436,12 @@ def apply_mastering_chain(
     haas_delay_ms: float = 0.0,
     reverb_size: float = 0.3,
     reverb_wet: float = 0.0,
+    glue_bypass: bool = True,
+    glue_threshold_db: float = -4.0,
+    glue_ratio: float = 2.0,
+    glue_attack_ms: float = 30.0,
+    glue_release_ms: float = 120.0,
+    glue_makeup_db: float = 0.0,
     limiter_ceiling: float = 0.95,
     limiter_release_ms: float = 80.0,
     **_ignored,
@@ -1549,6 +1555,21 @@ def apply_mastering_chain(
     if reverb_wet > 0.0:
         audio = reverb_simple(audio, sr, room_size=reverb_size, wet=reverb_wet)
 
+    # ── 9b. Glue compressor (opcional, nomenclatura de threshold en dB) ───
+    glue_meters = {"bypass": True, "gr_db": 0.0}
+    if not glue_bypass:
+        audio, glue_meters = compressor(
+            audio, sr,
+            threshold=10.0 ** (glue_threshold_db / 20.0),
+            ratio=glue_ratio,
+            attack_ms=glue_attack_ms,
+            release_ms=glue_release_ms,
+            makeup_db=glue_makeup_db,
+            oversample=ovs,
+            stereo_link=True,
+        )
+        glue_meters.update({"bypass": False, "threshold_db": round(glue_threshold_db, 2)})
+
     # ---- SIN NORMALIZACIÓN ----
 
     # VU pre-limiter (para métricas)
@@ -1570,6 +1591,7 @@ def apply_mastering_chain(
     chain_meters = {
         "config": {"oversample": ovs, "oversample_mode": str(oversample_mode), "comp_stereo_link": bool(comp_stereo_link)},
         "comp": comp_meters,
+        "glue": glue_meters,
         "mb": mb_meters,
         "pre_limiter":  {"rms_db": round(pre_rms_db, 2),  "peak_db": round(pre_peak_db, 2)},
         "post_limiter": {
@@ -1641,6 +1663,12 @@ def process_audio(
     haas_delay_ms: float = 0.0,
     reverb_size: float = 0.3,
     reverb_wet: float = 0.0,
+    glue_bypass: bool = True,
+    glue_threshold_db: float = -4.0,
+    glue_ratio: float = 2.0,
+    glue_attack_ms: float = 30.0,
+    glue_release_ms: float = 120.0,
+    glue_makeup_db: float = 0.0,
     limiter_ceiling: float = 0.95,
     limiter_release_ms: float = 80.0,
     output_format: str = "wav",
@@ -1722,6 +1750,12 @@ def process_audio(
         haas_delay_ms=haas_delay_ms,
         reverb_size=reverb_size,
         reverb_wet=reverb_wet,
+        glue_bypass=glue_bypass,
+        glue_threshold_db=glue_threshold_db,
+        glue_ratio=glue_ratio,
+        glue_attack_ms=glue_attack_ms,
+        glue_release_ms=glue_release_ms,
+        glue_makeup_db=glue_makeup_db,
         limiter_ceiling=limiter_ceiling,
         limiter_release_ms=limiter_release_ms,
     )
