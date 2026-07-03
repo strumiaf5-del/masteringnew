@@ -238,13 +238,13 @@
   .mb-gr-bar-wrap{width:100%;height:8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;overflow:hidden;position:relative}
   .mb-gr-bar{height:100%;background:linear-gradient(to right,var(--accent),var(--yellow));border-radius:4px;width:0%;transition:width .12s ease}
   .mb-gr-readout{font-family:var(--mono);font-size:.65rem;color:var(--text)}
-  .mb-vu-section{margin-top:.9rem;display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-  .mb-vu-item{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.5rem .75rem}
-  .mb-vu-label{font-size:.6rem;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem}
-  .mb-vu-row{display:flex;justify-content:space-between;align-items:center;margin-top:.15rem}
-  .mb-vu-key{font-size:.62rem;color:var(--muted);font-family:var(--mono)}
-  .mb-vu-val{font-size:.7rem;font-family:var(--mono);color:var(--text);font-weight:600}
-
+  .mb-vu-section{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:1rem}
+  .mb-vu-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.65rem .75rem}
+  .mb-vu-label{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.45rem}
+  .mb-vu-row{display:flex;justify-content:space-between;gap:.5rem;font-size:.72rem;padding:.2rem 0;border-bottom:1px solid rgba(42,42,58,.7)}
+  .mb-vu-row:last-child{border-bottom:none}
+  .mb-vu-key{color:var(--muted)}
+  .mb-vu-val{font-family:var(--mono);color:var(--text);font-weight:700}
   .mb-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.25rem;margin-top:1rem}
   .mb-wrap h3{font-size:.75rem;font-family:var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
   .mb-tabs{display:flex;gap:.5rem;margin-bottom:1rem}
@@ -717,7 +717,7 @@ function prefillTrackNameFromFile() {
   input.value = base;
 }
 let abSnapshotA = null, abSnapshotB = null;
-let previewDebounceTimer = null, previewAbortController = null, previewAudioUrl = null;
+let previewDebounceTimer = null, previewAbortController = null, previewAudioUrl = null, previewWS = null;
 let originalFFTCache = null;
 let previewBufs = { original: null, processed: null };
 let metersAudioCtx = null, metersSourceNode = null, metersAnalyserL = null, metersAnalyserR = null, metersRafId = null;
@@ -1903,45 +1903,93 @@ function schedulePreview() {
   previewDebounceTimer = setTimeout(runLivePreview, 600);
 }
 
+function wsUrlFor(path) {
+  const apiUrl = new URL(API());
+  return `${apiUrl.protocol === 'https:' ? 'wss' : 'ws'}://${apiUrl.host}${path}`;
+}
+
+function wavBlobFromPcm16(chunks, sampleRate, channels) {
+  const dataSize = chunks.reduce((n, b) => n + b.byteLength, 0);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const write = (off, str) => { for (let i=0; i<str.length; i++) view.setUint8(off+i, str.charCodeAt(i)); };
+  write(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); write(8, 'WAVE');
+  write(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true); view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, dataSize, true);
+  return new Blob([header, ...chunks], {type:'audio/wav'});
+}
+
 async function runLivePreview() {
   if (!selectedFile) return;
   if (previewAbortController) previewAbortController.abort();
+  if (previewWS) { try { previewWS.close(); } catch(e){} previewWS = null; }
   previewAbortController = new AbortController();
   const wrap = document.getElementById('previewWrap');
   wrap.style.display = 'block';
   setPreviewUpdating(true);
-  setPreviewStatus('Procesando preview (15s)…');
+  setPreviewStatus('Streaming preview + meters en tiempo real…');
 
-  const fmt = document.getElementById('s-format').value;
   try {
-    const params = buildParams();
-    params.set('preview_seconds', '15');
-    params.set('output_format', fmt);
-    const fd = new FormData(); fd.append('file', selectedFile);
-    const res = await fetch(`${API()}/preview?${params}`, {method:'POST', body:fd, signal:previewAbortController.signal});
-    if (!res.ok) throw new Error(await res.text());
-    const blob = await res.blob();
+    const ws = new WebSocket(wsUrlFor('/ws/master-stream'));
+    previewWS = ws;
+    const pcmChunks = [];
+    let sampleRate = 44100, channels = 2, lastMetrics = null;
+    previewAbortController.signal.addEventListener('abort', () => { try { ws.close(); } catch(e){} });
+
+    await new Promise((resolve, reject) => {
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = async () => {
+        const cfg = Object.fromEntries(buildParams().entries());
+        cfg.chunk_seconds = 0.35;
+        cfg.output_format = 'wav';
+        ws.send(JSON.stringify(cfg));
+        ws.send(await selectedFile.arrayBuffer());
+      };
+      ws.onmessage = ev => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          if (msg.event === 'chunk') {
+            lastMetrics = msg.metrics || null;
+            sampleRate = msg.sample_rate || sampleRate;
+            channels = msg.channels || channels;
+            updateMainMetersFromMetrics(lastMetrics);
+            const pct = lastMetrics?.progress_pct != null ? ` ${lastMetrics.progress_pct.toFixed(1)}%` : '';
+            setPreviewStatus(`Meters en vivo${pct}…`);
+          } else if (msg.event === 'done') resolve();
+          else if (msg.event === 'error') reject(new Error(msg.message || 'Error de streaming'));
+        } else {
+          pcmChunks.push(ev.data);
+        }
+      };
+      ws.onerror = () => reject(new Error('No se pudo abrir /ws/master-stream'));
+      ws.onclose = () => { if (!lastMetrics) reject(new Error('Streaming cerrado antes de recibir audio')); };
+    });
+
+    const blob = wavBlobFromPcm16(pcmChunks, sampleRate, channels);
     const ab = await blob.arrayBuffer();
     const audCtx = new (window.AudioContext||window.webkitAudioContext)();
     let decodedBuf;
     try { decodedBuf = await audCtx.decodeAudioData(ab.slice(0)); } finally { audCtx.close(); }
     const mono = decodedBuf.numberOfChannels>1 ? (()=>{const c0=decodedBuf.getChannelData(0), c1=decodedBuf.getChannelData(1), m=new Float32Array(c0.length); for(let i=0;i<c0.length;i++) m[i]=(c0[i]+c1[i])/2; return m;})() : decodedBuf.getChannelData(0);
     const previewFFT = computeFFTFromBuffer(mono, decodedBuf.sampleRate, 96);
-    const canvas = document.getElementById('previewCanvas');
     const series = [];
     if (originalFFTCache) series.push({label:'Original',data:originalFFTCache,color:'var(--muted)'});
     series.push({label:'Con tus ajustes',data:previewFFT,color:'var(--accent)'});
-    drawFFTOnCanvas(canvas, series);
+    drawFFTOnCanvas(document.getElementById('previewCanvas'), series);
 
     if (previewAudioUrl) URL.revokeObjectURL(previewAudioUrl);
     previewAudioUrl = URL.createObjectURL(blob);
     document.getElementById('previewAudioWrap').innerHTML = `<audio controls src="${previewAudioUrl}"></audio>`;
     setPreviewUpdating(false);
-    setPreviewStatus('Preview listo ✓ (15s)');
+    setPreviewStatus('Preview listo ✓ · meters actualizados en tiempo real');
   } catch(e) {
     if (e.name==='AbortError') return;
     setPreviewUpdating(false);
     setPreviewStatus('Error: '+e.message);
+  } finally {
+    previewWS = null;
   }
 }
 
@@ -2063,6 +2111,25 @@ function updateMeterFill(fillId, readoutId, db, fmt) {
   const pct = Math.max(0, Math.min(100, ((db+60)/60)*100));
   document.getElementById(fillId).style.height = pct + '%';
   document.getElementById(readoutId).textContent = db <= -99 ? '-∞' : fmt(db);
+}
+
+function updateMainMetersFromMetrics(metrics) {
+  if (!metrics) return;
+  document.getElementById('metersWrap').style.display = 'block';
+  if (metrics.peak_db != null) updateMeterFill('meterPeakFill','meterPeakReadout', metrics.peak_db, v=>v.toFixed(1)+' dB');
+  if (metrics.rms_db != null) updateMeterFill('meterRmsFill','meterRmsReadout', metrics.rms_db, v=>v.toFixed(1)+' dB');
+  if (metrics.lufs_momentary != null) updateMeterFill('meterLufsFill','meterLufsReadout', metrics.lufs_momentary, v=>v.toFixed(1)+' LUFS');
+  if (metrics.stereo_correlation != null) updateStereoMeter(metrics.stereo_correlation);
+  renderChainMeters({
+    mb: metrics.mb_meters || {},
+    pre_limiter: metrics.pre_limiter || {},
+    post_limiter: metrics.post_limiter || {
+      rms_db: metrics.rms_db,
+      peak_db: metrics.peak_db,
+      lufs: metrics.lufs_momentary,
+      stereo_correlation: metrics.stereo_correlation,
+    },
+  });
 }
 
 function updateStereoMeter(corr) {
