@@ -80,6 +80,39 @@ def _get_input_duration(input_path: str) -> Optional[float]:
         logger.warning(f"No se pudo calcular la duración de '{input_path}': {e}")
     return None
 
+
+_BOOL_QUERY_KEYS = {
+    "use_lufs_normalize", "comp_stereo_link", "mb_bypass", "mb_stereo_bypass",
+    "use_stereo_enhancer", "glue_bypass",
+}
+
+def coerce_ws_chain_params(params: dict) -> dict:
+    """Convierte params recibidos por WebSocket desde URLSearchParams/JSON.
+
+    El frontend arma el stream preview a partir de URLSearchParams; eso convierte
+    floats/bools a strings. FastAPI hace este casteo automáticamente en endpoints
+    REST, pero el WebSocket no, y el DSP espera números/bools reales.
+    """
+    out = {}
+    for key, value in params.items():
+        if key in _BOOL_QUERY_KEYS:
+            if isinstance(value, str):
+                out[key] = value.strip().lower() in {"1", "true", "yes", "on", "sí", "si"}
+            else:
+                out[key] = bool(value)
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if value == "":
+                continue
+            try:
+                out[key] = float(value)
+                continue
+            except ValueError:
+                pass
+        out[key] = value
+    return out
+
 def cleanup_old() -> None:
     now = time.time()
     try:
@@ -359,6 +392,8 @@ async def ws_master_stream(websocket: WebSocket):
         if platform:
             chain_params["use_lufs_normalize"] = True
             chain_params["target_lufs"] = get_platform_target(platform)["lufs"]
+
+        chain_params = coerce_ws_chain_params(chain_params)
 
         audio_bytes = await websocket.receive_bytes()
 
